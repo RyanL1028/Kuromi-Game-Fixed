@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flappy Kuromi & Baku</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      overflow: hidden;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    .game-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .start-screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      text-align: center;
+      z-index: 10;
+    }
+
+    .start-screen h1 {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+
+    .start-screen button {
+      background: lightskyblue;
+      border: none;
+      color: white;
+      padding: 1rem 3rem;
+      font-size: 1.5rem;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.3s;
+      margin: 0.5rem;
+    }
+
+    .start-screen button:hover {
+      background: #3498db;
+    }
+  </style>
+</head>
+<body>
+  <div class="game-container">
+    <canvas id="gameCanvas"></canvas>
+    <div class="start-screen">
+      <h1>Flappy Kuromi</h1>
+      <p>Choose a difficulty to start:</p>
+      <button onclick="setMode('baby')">Baby Mode</button>
+      <button onclick="setMode('veryEasy')">Very Easy Mode</button>
+      <button onclick="setMode('easy')">Easy Mode</button>
+      <button onclick="setMode('normal')">Normal Mode</button>
+      <button onclick="setMode('hard')">Hard Mode</button>
+      <button onclick="setMode('veryHard')">Very Hard Mode</button>
+      <button onclick="setMode('impossible')">Impossible Mode</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    // Set canvas dimensions
+          canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    
+    // Game variables
+    const bird = { x: 100, y: canvas.height / 2, width: 100, height: 100, velocity: 0, gravity: 0.5, lift: -12 };
+    const pipeWidth = 100;
+    let pipes = [];
+    const defaultPipeGap = 200;
+    const defaultPipeSpeed = 6;
+    let pipeGap = defaultPipeGap;
+    let pipeSpeed = defaultPipeSpeed;
+    let score = 0;
+    let gameRunning = false;
+    let gameOver = false;
+
+    // Load assets
+    const kuromiImg = new Image();
+    kuromiImg.src = "https://custom-progressbar.com/_next/image/?url=https%3A%2F%2Fcdn.custom-progressbar.com%2Fuploads%2Fsanrio_kuromi_and_baku_flying_custom_progress_bar_s_6c192a0c23.png&w=640&q=75";
+
+    const bgImage = new Image();
+    bgImage.src = "https://i.pinimg.com/736x/f2/ba/5e/f2ba5ec2d1a4dc886b0d959bedfe8eda.jpg";
+
+    const flapSound = new Audio("https://www.myinstants.com/media/sounds/sfx_wing.mp3");
+    const hitSound = new Audio("https://www.myinstants.com/media/sounds/sfx_die.mp3");
+    const bgMusic = new Audio("https://freesound.org/data/previews/410/410854_5121236-lq.mp3");
+
+    bgMusic.loop = true;
+
+    // Initialize audio on first interaction
+    document.addEventListener("click", () => {
+      bgMusic.play().catch(() => {});
+      flapSound.play().catch(() => {});
+      hitSound.play().catch(() => {});
+    }, { once: true });
+
+    // Difficulty settings
+    const modes = {
+      baby: { pipeGapMultiplier: 2.5, speedMultiplier: 0.75, birdSizeMultiplier: 1.5 },
+      veryEasy: { pipeGapMultiplier: 2, speedMultiplier: 0.75, birdSizeMultiplier: 1.1 },
+      easy: { pipeGapMultiplier: 1.75, speedMultiplier: 1, birdSizeMultiplier: 1 },
+      normal: { pipeGapMultiplier: 1.75, speedMultiplier: 1.1, birdSizeMultiplier: 1 },
+      hard: { pipeGapMultiplier: 0.8, speedMultiplier: 1.2, birdSizeMultiplier: 0.5 },
+      veryHard: { pipeGapMultiplier: 0.6, speedMultiplier: 1.5, birdSizeMultiplier: 0.3 },
+      impossible: { pipeGapMultiplier: 0.45, speedMultiplier: 2, birdSizeMultiplier: 0.1 },
+    };
+
+    function setMode(mode) {
+      if (!modes[mode]) return;
+      const settings = modes[mode];
+      pipeGap = defaultPipeGap * settings.pipeGapMultiplier;
+      pipeSpeed = defaultPipeSpeed * settings.speedMultiplier;
+      bird.width = 100 * settings.birdSizeMultiplier;
+      bird.height = 100 * settings.birdSizeMultiplier;
+      startGame();
+    }
+
+    function startGame() {
+      document.querySelector(".start-screen").style.display = "none";
+      gameRunning = true;
+      gameOver = false;
+      bird.y = canvas.height / 2;
+      bird.velocity = 0;
+      pipes = [];
+      score = 0;
+      bgMusic.play();
+      spawnPipe();
+      gameLoop();
+    }
+
+    function spawnPipe() {
+      const pipeHeight = Math.random() * (canvas.height - pipeGap);
+      pipes.push({
+        x: canvas.width,
+        topHeight: pipeHeight,
+        bottomHeight: canvas.height - pipeHeight - pipeGap,
+      });
+    }
+
+    function gameLoop() {
+      if (!gameRunning || gameOver) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(kuromiImg, bird.x, bird.y, bird.width, bird.height);
+
+      bird.velocity += bird.gravity;
+      bird.y += bird.velocity;
+
+      if (bird.y + bird.height > canvas.height || bird.y < 0) {
+        endGame();
+      }
+
+      const collisionPadding = 15; // Adjust this value as needed
+      pipes.forEach((pipe, index) => {
+        const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        gradient.addColorStop(0, "#8a2be2");
+        gradient.addColorStop(1, "#4b0082");
+        ctx.fillStyle = gradient;
+
+        ctx.fillRect(pipe.x, 0, pipeWidth, pipe.topHeight);
+        ctx.fillRect(pipe.x, canvas.height - pipe.bottomHeight, pipeWidth, pipe.bottomHeight);
+
+        pipe.x -= pipeSpeed;
+
+        // Collision detection with padding
+        if (
+          bird.x + collisionPadding < pipe.x + pipeWidth &&
+          bird.x + bird.width - collisionPadding > pipe.x &&
+          (bird.y + collisionPadding < pipe.topHeight ||
+            bird.y + bird.height - collisionPadding > canvas.height - pipe.bottomHeight)
+        ) {
+          endGame();
+        }
+
+        if (pipe.x + pipeWidth < 0) {
+          pipes.splice(index, 1);
+          score++;
+        }
+      });
+
+      if (pipes.length === 0 || pipes[pipes.length - 1].x < canvas.width / 2) {
+        spawnPipe();
+      }
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "30px Arial";
+      ctx.fillText(`Score: ${score}`, 20, 40);
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    function endGame() {
+      gameOver = true;
+      gameRunning = false;
+      bgMusic.pause();
+      hitSound.play();
+      setTimeout(() => {
+        alert(`Game Over! Your score: ${score}`);
+        document.querySelector(".start-screen").style.display = "flex";
+      }, 500);
+    }
+
+    function fly() {
+      if (!gameRunning || gameOver) return;
+      bird.velocity = bird.lift;
+      flapSound.play();
+    }
+
+    window.addEventListener("keydown", (e) => {
+      if (e.code === "Space") fly();
+    });
+
+    window.addEventListener("click", fly);
+
+    // Add touch support
+    window.addEventListener("touchstart", fly);
+  </script>
+</body>
+</html>s
